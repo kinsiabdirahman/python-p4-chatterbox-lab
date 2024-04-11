@@ -1,149 +1,61 @@
+from flask import Flask, request, make_response, jsonify
+from flask_cors import CORS
+from flask_migrate import Migrate
+from models import db, Message
 from datetime import datetime
 
-from app import app
-from models import db, Message
+app = Flask(__name__)
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///app.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+app.json.compact = False
 
-class TestApp:
-    '''Flask application in app.py'''
+CORS(app)
+migrate = Migrate(app, db)
 
-    with app.app_context():
-        m = Message.query.filter(
-            Message.body == "Hello 👋"
-            ).filter(Message.username == "Liza")
+db.init_app(app)
 
-        for message in m:
-            db.session.delete(message)
+@app.route('/messages', methods=['GET'])
+def get_messages():
+    messages = Message.query.all()
+    return jsonify([msg.to_dict() for msg in messages])
 
-        db.session.commit()
+@app.route('/messages/<int:id>', methods=['GET'])
+def get_message(id):
+    message = Message.query.get(id)
+    if message:
+        return jsonify(message.to_dict())
+    else:
+        return jsonify({'error': 'Message not found'}), 404
 
-    def test_has_correct_columns(self):
-        with app.app_context():
+@app.route('/messages', methods=['POST'])
+def create_message():
+    data = request.get_json()
+    message = Message(body=data.get('body'), username=data.get('username'))
+    db.session.add(message)
+    db.session.commit()
+    return jsonify(message.to_dict()), 201
 
-            hello_from_liza = Message(
-                body="Hello 👋",
-                username="Liza")
-            
-            db.session.add(hello_from_liza)
-            db.session.commit()
+@app.route('/messages/<int:id>', methods=['PUT'])
+def update_message(id):
+    message = Message.query.get(id)
+    if not message:
+        return jsonify({'error': 'Message not found'}), 404
 
-            assert(hello_from_liza.body == "Hello 👋")
-            assert(hello_from_liza.username == "Liza")
-            assert(type(hello_from_liza.created_at) == datetime)
+    data = request.get_json()
+    if 'body' in data:
+        message.body = data['body']
 
-            db.session.delete(hello_from_liza)
-            db.session.commit()
+    db.session.commit()
+    return jsonify(message.to_dict())
 
-    def test_returns_list_of_json_objects_for_all_messages_in_database(self):
-        '''returns a list of JSON objects for all messages in the database.'''
-        with app.app_context():
-            response = app.test_client().get('/messages')
-            records = Message.query.all()
+@app.route('/messages/<int:id>', methods=['DELETE'])
+def delete_message(id):
+    message = Message.query.get(id)
+    if not message:
+        return jsonify({'error': 'Message not found'}), 404
+    db.session.delete(message)
+    db.session.commit()
+    return jsonify({'message': 'Message deleted'}), 204
 
-            for message in response.json:
-                assert(message['id'] in [record.id for record in records])
-                assert(message['body'] in [record.body for record in records])
-
-    def test_creates_new_message_in_the_database(self):
-        '''creates a new message in the database.'''
-        with app.app_context():
-
-            app.test_client().post(
-                '/messages',
-                json={
-                    "body":"Hello 👋",
-                    "username":"Liza",
-                }
-            )
-
-            h = Message.query.filter_by(body="Hello 👋").first()
-            assert(h)
-
-            db.session.delete(h)
-            db.session.commit()
-
-    def test_returns_data_for_newly_created_message_as_json(self):
-        '''returns data for the newly created message as JSON.'''
-        with app.app_context():
-
-            response = app.test_client().post(
-                '/messages',
-                json={
-                    "body":"Hello 👋",
-                    "username":"Liza",
-                }
-            )
-
-            assert(response.content_type == 'application/json')
-
-            assert(response.json["body"] == "Hello 👋")
-            assert(response.json["username"] == "Liza")
-
-            h = Message.query.filter_by(body="Hello 👋").first()
-            assert(h)
-
-            db.session.delete(h)
-            db.session.commit()
-
-
-    def test_updates_body_of_message_in_database(self):
-        '''updates the body of a message in the database.'''
-        with app.app_context():
-
-            m = Message.query.first()
-            id = m.id
-            body = m.body
-
-            app.test_client().patch(
-                f'/messages/{id}',
-                json={
-                    "body":"Goodbye 👋",
-                }
-            )
-
-            g = Message.query.filter_by(body="Goodbye 👋").first()
-            assert(g)
-
-            g.body = body
-            db.session.add(g)
-            db.session.commit()
-
-    def test_returns_data_for_updated_message_as_json(self):
-        '''returns data for the updated message as JSON.'''
-        with app.app_context():
-
-            m = Message.query.first()
-            id = m.id
-            body = m.body
-
-            response = app.test_client().patch(
-                f'/messages/{id}',
-                json={
-                    "body":"Goodbye 👋",
-                }
-            )
-
-            assert(response.content_type == 'application/json')
-            assert(response.json["body"] == "Goodbye 👋")
-
-            g = Message.query.filter_by(body="Goodbye 👋").first()
-            g.body = body
-            db.session.add(g)
-            db.session.commit()
-
-    def test_deletes_message_from_database(self):
-        '''deletes the message from the database.'''
-        with app.app_context():
-
-            hello_from_liza = Message(
-                body="Hello 👋",
-                username="Liza")
-            
-            db.session.add(hello_from_liza)
-            db.session.commit()
-
-            app.test_client().delete(
-                f'/messages/{hello_from_liza.id}'
-            )
-
-            h = Message.query.filter_by(body="Hello 👋").first()
-            assert(not h)
+if __name__ == '__main__':
+    app.run(port=5555)
